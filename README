@@ -1,2 +1,3 @@
-Para compilar utiliza la siguiente orden:
-gcc supermanager.c -O3 -fopenmp
+Para compilar utiliza los siguientes comandos:
+make clean
+make all

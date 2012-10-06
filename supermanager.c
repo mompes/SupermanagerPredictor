@@ -1,8 +1,20 @@
+/**
+ *
+ * Author: Juan Mompeán Esteban
+ * Date: 06-10-12
+ * Este programa trata de encontrar la mejor combinación
+ * de jugadores a partir de un equipo dado. 
+ * El equipo es de supermanager.acb.com
+ *
+ */
+
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
 #include<math.h>
 #include<omp.h>
+#include<string.h>
+#include"util.h"
 
 #define NUM_JUGADORES 11
 #define NUM_BASES 36
@@ -11,9 +23,9 @@
 #define HELP " [-s máximo_dinero_sin_gastar]"
 
 int * precios, * ePrecios;
-char ** eNombres, ** nombres;
-double * eMedias, * eSube15, * sube15, * medias;
-int njugadores, dineroTotal, dineroCaja, MAX_SIN_GASTAR = 50000;
+char ** eNombres, ** nombres, ** jugadoresObligatorios;
+double * eMedias, * eSube15, * sube15, * medias, PORCENTAJE_BROKER = 0.9, PORCENTAJE_MEDIA = 0.1;;
+int njugadores, dineroTotal, dineroCaja, MAX_SIN_GASTAR = 50000, nobligatorios = 0;
 
 
 
@@ -96,15 +108,15 @@ double getValoracion(double * medias, double * sube15) {
 	int i;
 	for(i = 0; i < NUM_JUGADORES; i++) {
 		if (medias[i] > 0) {
-		  int sube = sube15[i];
-		  if (sube==0)
-		    continue;
-		  int media = medias[i];
-		  if (sube < 0) {
-		    media = medias[i] - sube15[i];
-		    sube = -sube;
-		  }
-			resultado += media/sube;
+		  // Calcula un valor más estándar para la subida de la próxima semana
+		  double distancia = (medias[i] - sube15[i]) / medias[i];
+		  // La media
+		  double media = medias[i];
+		  // normaliza
+		  distancia = distancia / dmax(distancia, media);
+		  media = media / dmax(distancia, media);
+		  // Valora tanto lo que va a subir en la próxima jornada como su media
+			resultado += distancia * PORCENTAJE_BROKER + media * PORCENTAJE_MEDIA;
 		}
 	}
 	return resultado;
@@ -129,6 +141,19 @@ int estaEnEquipo(char * nombre, char ** equipo) {
   return 0;
 }
 
+int contieneJugadoresObligatorios(int nobligatorios, char ** obligatorios, char ** equipo) {
+  int i, j, contador = 0;
+  for (i = 0; i < NUM_JUGADORES; i++) {
+    for (j = 0; j < nobligatorios; j++) {
+      if (strcmp(obligatorios[j], equipo[i]) == 0) {
+        contador++;
+        break;
+      }
+    }
+  }
+  return (contador == nobligatorios) ? 1 : 0;
+}
+
 int getDineroCaja(int * precios) {
   int i;
   int total = 0;
@@ -139,10 +164,33 @@ int getDineroCaja(int * precios) {
   return dineroTotal - total;
 }
 
+
+void copiarATemp(int ii, int jj, int kk, int i, int j, int k, double *tempMedias, double * tempSube15, int * tempPrecios, char ** tempNombres) {
+  int index;
+  for (index = 0; index < NUM_JUGADORES; index++) {
+    tempMedias[index] = eMedias[index];
+    tempSube15[index] = eSube15[index];
+    tempPrecios[index] = ePrecios[index];
+    tempNombres[index] = eNombres[index];
+  }
+  tempMedias[i] = medias[ii];
+  tempMedias[j] = medias[jj];
+  tempMedias[k] = medias[kk];
+  tempSube15[i] = sube15[ii];
+  tempSube15[j] = sube15[jj];
+  tempSube15[k] = sube15[kk];
+  tempPrecios[i] = precios[ii];
+  tempPrecios[j] = precios[jj];
+  tempPrecios[k] = precios[kk];
+  tempNombres[i] = nombres[ii];
+  tempNombres[j] = nombres[jj];
+  tempNombres[k] = nombres[kk];
+}
+
 void solve() {
   int ii, jj, kk, i, j, k, jugadoresProcesados = 0, np, iam;
   double** mejorMedias, **mejorSube15, **tempMedias, **tempSube15;
-  char *** mejorNombres;
+  char *** mejorNombres, ***tempNombres;
   int ** mejorPrecios, **tempPrecios;
   #pragma omp parallel private(iam, ii, jj, kk, i, j, k) shared(mejorMedias, mejorSube15, mejorNombres, mejorPrecios, tempMedias, tempSube15, tempPrecios, nombres, jugadoresProcesados)
   {
@@ -152,10 +200,10 @@ void solve() {
     #endif
     #pragma omp single
     {
-      printf("Hi hi %d\n", iam);
       mejorMedias = (double **) malloc (sizeof(double*) * np);
       mejorSube15 = (double **) malloc (sizeof(double*) * np);
       mejorNombres = (char ***) malloc (sizeof(char**) * np);
+      tempNombres = (char ***) malloc (sizeof(char**) * np);
       mejorPrecios = (int **) malloc (sizeof(int*) * np);
       tempMedias = (double **) malloc (sizeof(double*) * np);
       tempSube15 = (double **) malloc (sizeof(double*) * np);
@@ -168,6 +216,7 @@ void solve() {
     mejorMedias[iam] = (double*) malloc (sizeof(double) * NUM_JUGADORES);
     mejorSube15[iam] = (double *) malloc (sizeof(double) *NUM_JUGADORES);
     mejorNombres[iam] = (char**) malloc (sizeof(char*) * NUM_JUGADORES);
+    tempNombres[iam] = (char**) malloc (sizeof(char*) * NUM_JUGADORES);
     mejorPrecios[iam] = (int *) malloc (sizeof(int) * NUM_JUGADORES);
     tempMedias[iam] = (double *) malloc (sizeof(double) *NUM_JUGADORES);
     tempSube15[iam] = (double *) malloc (sizeof(double) *NUM_JUGADORES);
@@ -178,6 +227,7 @@ void solve() {
       mejorSube15[iam][k] = eSube15[k];
       mejorNombres[iam][k] = eNombres[k];
       mejorPrecios[iam][k] = ePrecios[k];
+      tempNombres[iam][k] = eNombres[k];
     }
 
     #pragma omp for
@@ -201,22 +251,12 @@ void solve() {
               for (k = 0; k < NUM_JUGADORES; k++) {
                 if (k==i | k==j | ((k < 3 & kk > NUM_BASES) | ((k > 2 & k < 7) & (kk > NUM_ALEROS | kk < NUM_BASES))| ((k > 6 & k < 11) & kk < NUM_ALEROS))) 
                   continue;
-                int index;
-                for (index = 0; index < NUM_JUGADORES; index++) {
-                  tempMedias[iam][index] = eMedias[index];
-                  tempSube15[iam][index] = eSube15[index];
-                  tempPrecios[iam][index] = ePrecios[index];
-                }
-                tempMedias[iam][i] = medias[ii];
-                tempMedias[iam][j] = medias[jj];
-                tempMedias[iam][k] = medias[kk];
-                tempSube15[iam][i] = sube15[ii];
-                tempSube15[iam][j] = sube15[jj];
-                tempSube15[iam][k] = sube15[kk];
-                tempPrecios[iam][i] = precios[ii];
-                tempPrecios[iam][j] = precios[jj];
-                tempPrecios[iam][k] = precios[kk];
-                if (getDineroCaja(tempPrecios[iam]) < MAX_SIN_GASTAR & getCosteEquipo(tempPrecios[iam]) <= dineroTotal & getValoracion(tempMedias[iam], tempSube15[iam]) > getValoracion(mejorMedias[iam], mejorSube15[iam])) {
+                copiarATemp(ii, jj, kk, i, j, k, tempMedias[iam], tempSube15[iam], tempPrecios[iam], tempNombres[iam]);
+                if (contieneJugadoresObligatorios(nobligatorios, jugadoresObligatorios, tempNombres[iam]) & 
+                    getDineroCaja(tempPrecios[iam]) < MAX_SIN_GASTAR & 
+                    (getCosteEquipo(tempPrecios[iam]) <= dineroTotal) & 
+                    (getValoracion(tempMedias[iam], tempSube15[iam]) > getValoracion(mejorMedias[iam], mejorSube15[iam]))) {
+                  int index;
                   for (index = 0; index < NUM_JUGADORES; index++) {
                       mejorMedias[iam][index] = tempMedias[iam][index];
                       mejorSube15[iam][index] = tempSube15[iam][index];
@@ -244,8 +284,9 @@ void solve() {
     #pragma omp single
     {
       // Coge el mejor de todos los buscados
+      int i = 0;
       for (i = 1; i < np; i++) {
-        if (getValoracion(mejorMedias[i], mejorSube15[i]) > getValoracion(mejorMedias[0], mejorSube15[0])) {
+        if (contieneJugadoresObligatorios(nobligatorios, jugadoresObligatorios, mejorNombres[i]) & (getValoracion(mejorMedias[i], mejorSube15[i]) > getValoracion(mejorMedias[0], mejorSube15[0]))) {
           mejorMedias[0] = mejorMedias[i];
           mejorSube15[0] = mejorSube15[i];
           mejorNombres[0] = mejorNombres[i];
@@ -257,7 +298,7 @@ void solve() {
         printf("Nombre: %s;\t\tprecio: %d\t\tmedia: %f\t\tsube15: %f \n", mejorNombres[0][i], mejorPrecios[0][i], mejorMedias[0][i], mejorSube15[0][i]);
       }
       printf("\nCoste del equipo: %d; dinero en caja: %d\n", getCosteEquipo(mejorPrecios[0]), getDineroCaja(mejorPrecios[0]));
-      printf("\nLo de equipo ganador era coña, eso le preguntas a la güija :)\n");
+      printf("\nLo de equipo ganador era coña, eso se le preguntas a la güija :)\n");
       for (i=0; i<np;i++) {
         free(mejorNombres[i]);
         free(mejorMedias[i]);
@@ -265,6 +306,7 @@ void solve() {
         free(tempMedias[i]);
         free(tempSube15[i]);
         free(tempPrecios[i]);
+        free(tempNombres[i]);
       }
       free (mejorNombres);
       free(mejorMedias);
@@ -272,6 +314,7 @@ void solve() {
       free(tempMedias);
       free(tempSube15);
       free(tempPrecios);
+      free(tempNombres);
     }
   }
   
@@ -282,7 +325,7 @@ void solve() {
 void parsearArgumentos(int argc, const char * argv[]) {
   int i;
   for (i = 1; i < argc; i++) {
-    if (strlen(argv[i]) == 2 & argv[i][0] == '-') {
+    if ((strlen(argv[i]) == 2) & (argv[i][0] == '-')) {
       switch(argv[i][1]) {
         case 'e':
           if (argc > (i+1)) {
@@ -291,11 +334,40 @@ void parsearArgumentos(int argc, const char * argv[]) {
               printf("El mínimo permitido sin gastar es 1.000\n");
               exit(-1);
             }
+            i++;
           }
           break;
         case 'h':
           printf("%s %s\n", argv[0], HELP);
           exit(-1);
+          break;
+        case 'b':
+          if (argc > (i+1)) {
+            PORCENTAJE_BROKER = strtod(argv[i+1], NULL);
+            i++;
+          }
+          break;
+        case 'm':
+          if (argc > (i+1)) {
+            PORCENTAJE_MEDIA = strtod(argv[i+1], NULL);
+            i++;
+          }
+          break;
+        case 'j':
+          if (argc > (i+1)) {
+            nobligatorios = count(argv[i+1], ';');
+            jugadoresObligatorios = (char**) malloc (sizeof(char*) * nobligatorios);
+            int j;
+            char * current = (char*)argv[i+1], * anterior = (char*)argv[i+1];
+            for (j = 0; j < nobligatorios; j++) {
+              current = strchr(anterior, ';');
+              jugadoresObligatorios[j] = (char *) malloc (sizeof(char) * (current-anterior+1));
+              memset(jugadoresObligatorios[j], '\0', current-anterior+1);
+              strncpy(jugadoresObligatorios[j], anterior, current - anterior);
+              anterior = current + 1;
+            }
+            i++;
+          }
           break;
       }
     }

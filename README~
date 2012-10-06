@@ -1,0 +1,2 @@
+Para compilar utiliza la siguiente orden:
+gcc supermanager.c -O3 -fopenmp
