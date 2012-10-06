@@ -3,7 +3,7 @@ make clean
 make all
 
 Para ejecutar:
-time ./supermanager [-m 0.5 -b 0.5 -e 500000 -j "Savané, Sitapha;Granger, Jayson;Quezada, Manny;"]
+time ./supermanager -m 0.5 -b 0.5 -e 500000 -j "Savané, Sitapha;Granger, Jayson;Quezada, Manny;"
 
 -m: Porcentaje que se tiene en cuenta de la media.
 -b: Porcentaje que se tiene en cuenta del broker.
